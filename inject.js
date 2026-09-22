@@ -39,9 +39,15 @@
 
   // ── 2. Pure geometry only — no UV, no tangent, no material, no color ──────
   const geo = modelMesh.geometry;
+  if (!geo?.attributes?.position?.array?.length) {
+    throw new Error('Mesh has no position data — geometry not ready or Tripo changed something.');
+  }
   const positions = geo.attributes.position.array;
   const indices = geo.index?.array ?? null;
   const triCount = indices ? indices.length / 3 : positions.length / 9;
+  if (triCount < 1) {
+    throw new Error('Mesh has zero triangles — nothing to export.');
+  }
   console.log(`[tripo-extract] ${positions.length / 3} vertices, ${triCount} triangles`);
 
   // ── 3. Build binary STL (face-normal computed per triangle, not sourced

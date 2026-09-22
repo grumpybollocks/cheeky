@@ -31,24 +31,66 @@
   const viewerCanvas = findByName(pageInternal.subTree, 'ViewerCanvas');
   if (!viewerCanvas) throw new Error('ViewerCanvas component not found.');
   const modelSystem = viewerCanvas.props?.engine?.system?.model;
-  const meshEntity = modelSystem?.entityMesh?.[0];
-  const modelMesh = meshEntity?.ref;
-  if (!modelMesh?.isMesh) throw new Error('Decoded mesh not found — is the model finished generating?');
+  const meshEntities = modelSystem?.entityMesh;
+  if (!meshEntities || meshEntities.length < 1) {
+    throw new Error('No mesh entities found — is the model finished generating?');
+  }
 
-  console.log('[tripo-extract] Mesh found:', modelMesh.name);
+  // Models generated "in parts" have multiple separate mesh entities — grab
+  // all of them, not just the first, or multi-part models silently lose
+  // everything but one piece.
+  const meshes = [];
+  for (const entity of meshEntities) {
+    const mesh = entity?.ref;
+    if (mesh?.isMesh && mesh.geometry?.attributes?.position?.array?.length) {
+      mesh.updateMatrixWorld(true);
+      meshes.push(mesh);
+    }
+  }
+  if (meshes.length < 1) {
+    throw new Error('No valid mesh geometry found among entities — geometry not ready or Tripo changed something.');
+  }
+  console.log(`[tripo-extract] ${meshes.length} mesh part(s) found`);
 
   // ── 2. Pure geometry only — no UV, no tangent, no material, no color ──────
-  const geo = modelMesh.geometry;
-  if (!geo?.attributes?.position?.array?.length) {
-    throw new Error('Mesh has no position data — geometry not ready or Tripo changed something.');
+  // Combine all parts into one position/index buffer, each transformed into
+  // world space via its own matrixWorld (a no-op for the common single-mesh
+  // case, since that matrix is identity).
+  let totalVerts = 0, totalIdx = 0;
+  for (const m of meshes) {
+    const vCount = m.geometry.attributes.position.array.length / 3;
+    totalVerts += vCount;
+    totalIdx += m.geometry.index?.array?.length ?? vCount;
   }
-  const positions = geo.attributes.position.array;
-  const indices = geo.index?.array ?? null;
-  const triCount = indices ? indices.length / 3 : positions.length / 9;
+
+  const positions = new Float32Array(totalVerts * 3);
+  const indices = new Uint32Array(totalIdx);
+  let vOff = 0, iOff = 0, vertBase = 0;
+
+  for (const m of meshes) {
+    const pos = m.geometry.attributes.position.array;
+    const vCount = pos.length / 3;
+    const me = m.matrixWorld.elements;
+    for (let i = 0; i < vCount; i++) {
+      const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+      positions[vOff++] = me[0] * x + me[4] * y + me[8]  * z + me[12];
+      positions[vOff++] = me[1] * x + me[5] * y + me[9]  * z + me[13];
+      positions[vOff++] = me[2] * x + me[6] * y + me[10] * z + me[14];
+    }
+    const idxArr = m.geometry.index?.array;
+    if (idxArr) {
+      for (let i = 0; i < idxArr.length; i++) indices[iOff++] = idxArr[i] + vertBase;
+    } else {
+      for (let i = 0; i < vCount; i++) indices[iOff++] = i + vertBase;
+    }
+    vertBase += vCount;
+  }
+
+  const triCount = indices.length / 3;
   if (triCount < 1) {
     throw new Error('Mesh has zero triangles — nothing to export.');
   }
-  console.log(`[tripo-extract] ${positions.length / 3} vertices, ${triCount} triangles`);
+  console.log(`[tripo-extract] ${totalVerts} vertices, ${triCount} triangles (combined)`);
 
   // ── 3. Build binary STL (face-normal computed per triangle, not sourced
   //      from the mesh — STL has no use for shading/vertex normals) ────────
@@ -100,7 +142,14 @@
   const fileMB = (totalSize / 1024 / 1024).toFixed(2);
   console.log(`[tripo-extract] STL assembled — ${fileMB} MB, ${triCount} triangles`);
 
-  const modelId = window.location.pathname.split('/').filter(Boolean).pop() || 'model';
+  // Tripo slugs are derived from free-text prompts — can contain arbitrary
+  // characters and be arbitrarily long. Sanitize and cap length so the
+  // filename can't exceed the filesystem's limit (255 bytes on ext4) or
+  // contain characters that break path handling (e.g. a literal "/").
+  // Keep the END of the string, not the start — that's where Tripo puts the
+  // UUID, which is what actually distinguishes one generation from another.
+  const rawId = window.location.pathname.split('/').filter(Boolean).pop() || 'model';
+  const modelId = rawId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(-150) || 'model';
   const filename = `tripo_${modelId}.stl`;
   const blobUrl = URL.createObjectURL(new Blob([buf], { type: 'model/stl' }));
 

@@ -1,0 +1,6 @@
+venv/
+browser_profile/
+brave_profile/
+__pycache__/
+*.pyc
+*.log

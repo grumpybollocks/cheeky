@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -6,8 +7,26 @@ from playwright.sync_api import sync_playwright
 
 SCRIPT_DIR = Path(__file__).parent
 INJECT_JS = (SCRIPT_DIR / "inject.js").read_text()
-DOWNLOAD_DIR = Path.home() / "Desktop"
 CDP_URL = "http://127.0.0.1:9333"
+
+
+def get_desktop_dir():
+    try:
+        result = subprocess.run(
+            ["xdg-user-dir", "DESKTOP"], capture_output=True, text=True, timeout=5
+        )
+        path = Path(result.stdout.strip())
+        if result.returncode == 0 and path.is_absolute():
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+    except (OSError, subprocess.SubprocessError):
+        pass
+    fallback = Path.home() / "Desktop"
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
+DOWNLOAD_DIR = get_desktop_dir()
 
 FIND_MESH_JS = """
 () => {

@@ -17,17 +17,20 @@ shape in Tripo's viewer, not just the 2D reference image) before running it.
 ```bash
 git clone git@github.com:grumpybollocks/cheeky.git
 cd cheeky
-python3 -m venv venv
-./venv/bin/pip install -r requirements.txt
-./venv/bin/python -m playwright install chromium
 ```
 
-Then point a desktop launcher's `Exec=` at that folder's `run.sh` (same as
-on AC130arch). Nothing else is machine-specific — see "Why this is portable"
-below for exactly what was checked.
+Then double-click `install.sh` in your file manager and choose **Execute**
+(KDE/Dolphin asks this by default for a script with the executable bit set —
+that bit is preserved by git). It creates the Python virtual environment,
+installs dependencies, installs Playwright's bundled Chromium (used only for
+its tooling — actual browsing happens in your real Brave over CDP, not this
+Chromium), and puts a **Tripo3D Downloader** icon on your Desktop, all in one
+step. Nothing else is machine-specific — see "Why this is portable" below
+for exactly what was checked.
 
-`playwright install chromium` is only used for its bundled tooling; the
-actual browsing happens in your real Brave over CDP, not this Chromium.
+Re-running `install.sh` later is safe (e.g. after a `git pull`) — it skips
+recreating the virtual environment if one already exists, and just
+refreshes everything else.
 
 ## How it works
 
